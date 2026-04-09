@@ -8,6 +8,10 @@
         <ini name="display_errors" value="1"/>
         <ini name="error_reporting" value="-1"/>
         <server name="APP_ENV" value="test" force="true"/>
+        <server name="KERNEL_CLASS" value="App\Kernel"/>
+        <server name="DEFAULT_URI" value="http://localhost"/>
+        <server name="APP_SHARE_DIR" value="var/share"/>
+        <server name="DATABASE_URL" value="sqlite:///var/test.db"/>
         <server name="SHELL_VERBOSITY" value="-1"/>
         <server name="SYMFONY_PHPUNIT_REMOVE" value=""/>
         <server name="SYMFONY_PHPUNIT_VERSION" value="11"/>

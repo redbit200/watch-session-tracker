@@ -1,4 +1,7 @@
 doctrine:
     dbal:
-        # Use an in-memory SQLite database for tests so they're isolated and fast
-        url: 'sqlite:///:memory:'
+        # Use a file-based SQLite database for tests.
+        # :memory: won't work because Doctrine resets (re-opens) the connection
+        # between requests in test mode, which wipes the in-memory state.
+        # The file is deleted and recreated in setUp() for isolation.
+        url: '%env(resolve:DATABASE_URL)%'

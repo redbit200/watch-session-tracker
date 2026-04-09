@@ -6,8 +6,8 @@ use App\Dto\IncomingEvent;
 use App\Entity\Event;
 use App\Entity\Session;
 use App\Service\SessionTracker;
-use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\EntityRepository;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -34,13 +34,12 @@ class SessionTrackerTest extends TestCase
     public function testStateTransitions(string $eventType, string $expectedState): void
     {
         $session = $this->makeSession();
-
-        // EM returns our pre-built session so we can inspect its state after handle()
         $this->em->method('find')->willReturn($session);
         $this->em->expects($this->once())->method('flush');
+        // findOneBy returns null by default (PHPUnit mock default for nullable)
+        $this->mockEventRepo(existingEvent: null);
 
-        $dto = $this->makeDto($eventType);
-        $this->tracker->handle($dto);
+        $this->tracker->handle($this->makeDto($eventType));
 
         $this->assertSame($expectedState, $session->getState());
     }
@@ -48,12 +47,12 @@ class SessionTrackerTest extends TestCase
     public static function stateTransitionProvider(): array
     {
         return [
-            'start sets playing'         => ['start',        'playing'],
-            'resume sets playing'        => ['resume',       'playing'],
-            'pause sets paused'          => ['pause',        'paused'],
-            'buffer_start sets buffering'=> ['buffer_start', 'buffering'],
-            'buffer_end sets playing'    => ['buffer_end',   'playing'],
-            'end sets ended'             => ['end',          'ended'],
+            'start sets playing'          => ['start',        'playing'],
+            'resume sets playing'         => ['resume',       'playing'],
+            'pause sets paused'           => ['pause',        'paused'],
+            'buffer_start sets buffering' => ['buffer_start', 'buffering'],
+            'buffer_end sets playing'     => ['buffer_end',   'playing'],
+            'end sets ended'              => ['end',          'ended'],
         ];
     }
 
@@ -64,11 +63,11 @@ class SessionTrackerTest extends TestCase
 
         $this->em->method('find')->willReturn($session);
         $this->em->expects($this->once())->method('flush');
+        $this->mockEventRepo(existingEvent: null);
 
         $this->tracker->handle($this->makeDto('heartbeat'));
 
-        // Heartbeat should NOT change state
-        $this->assertSame('paused', $session->getState());
+        $this->assertSame('paused', $session->getState()); // heartbeat must not change state
     }
 
     public function testHeartbeatUpdatesLastEventAt(): void
@@ -78,8 +77,8 @@ class SessionTrackerTest extends TestCase
 
         $this->em->method('find')->willReturn($session);
         $this->em->expects($this->once())->method('flush');
+        $this->mockEventRepo(existingEvent: null);
 
-        // Use a timestamp one minute in the future
         $dto = $this->makeDto('heartbeat', eventTimestamp: '2026-01-01T00:01:00Z');
         $this->tracker->handle($dto);
 
@@ -88,31 +87,30 @@ class SessionTrackerTest extends TestCase
 
     public function testNewSessionCreatedWhenNotFound(): void
     {
-        // EM returns null → no existing session
-        $this->em->method('find')->willReturn(null);
-        // persist is called twice: once for the new Session, once for the Event
-        $this->em->expects($this->exactly(2))->method('persist');
+        $this->em->method('find')->willReturn(null); // no existing session
+        $this->em->expects($this->exactly(2))->method('persist'); // Session + Event
         $this->em->expects($this->once())->method('flush');
+        $this->mockEventRepo(existingEvent: null);
 
         $result = $this->tracker->handle($this->makeDto('start'));
 
         $this->assertFalse($result); // not a duplicate
     }
 
-    public function testDuplicateEventReturnsTrueAndDoesNotThrow(): void
+    public function testDuplicateEventReturnsTrueAndDoesNotFlush(): void
     {
         $session = $this->makeSession();
         $this->em->method('find')->willReturn($session);
 
-        // flush() throws on the UNIQUE constraint violation
-        $this->em->method('flush')->willThrowException(
-            $this->createMock(UniqueConstraintViolationException::class)
-        );
-        $this->em->expects($this->once())->method('clear');
+        // The repo says this eventId is already stored → duplicate
+        $existingEvent = $this->createMock(Event::class);
+        $this->mockEventRepo(existingEvent: $existingEvent);
+
+        $this->em->expects($this->never())->method('flush');
 
         $result = $this->tracker->handle($this->makeDto('heartbeat'));
 
-        $this->assertTrue($result); // recognized as duplicate
+        $this->assertTrue($result);
     }
 
     public function testPositionIsUpdatedOnTouch(): void
@@ -120,6 +118,7 @@ class SessionTrackerTest extends TestCase
         $session = $this->makeSession();
         $this->em->method('find')->willReturn($session);
         $this->em->expects($this->once())->method('flush');
+        $this->mockEventRepo(existingEvent: null);
 
         $this->tracker->handle($this->makeDto('heartbeat', position: 999.5));
 
@@ -127,6 +126,13 @@ class SessionTrackerTest extends TestCase
     }
 
     // ─── helpers ────────────────────────────────────────────────────────────────
+
+    private function mockEventRepo(mixed $existingEvent): void
+    {
+        $repo = $this->createMock(EntityRepository::class);
+        $repo->method('findOneBy')->willReturn($existingEvent);
+        $this->em->method('getRepository')->willReturn($repo);
+    }
 
     private function makeSession(): Session
     {

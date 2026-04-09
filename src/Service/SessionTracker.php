@@ -5,7 +5,6 @@ namespace App\Service;
 use App\Dto\IncomingEvent;
 use App\Entity\Event;
 use App\Entity\Session;
-use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
@@ -88,6 +87,15 @@ class SessionTracker
 
     /**
      * Persist the raw event. Returns true if this eventId was already stored (duplicate).
+     *
+     * We check for the existing event with a SELECT before inserting rather than
+     * relying on a UNIQUE constraint exception. The try/catch approach leaves the
+     * EntityManager and SQLite connection in a difficult-to-recover state after
+     * a failed transaction, particularly with in-memory SQLite in tests.
+     *
+     * The UNIQUE index on event_id still exists as a safety net — a true concurrent
+     * race between two requests won't be caught by the SELECT, but that's an edge
+     * case acceptable for v1. Production would handle this with a proper queue.
      */
     private function appendEvent(
         IncomingEvent $dto,
@@ -95,6 +103,12 @@ class SessionTracker
         \DateTimeImmutable $eventTimestamp,
         \DateTimeImmutable $receivedAt,
     ): bool {
+        // Check before inserting — avoids leaving the EM in a broken state
+        $existing = $this->em->getRepository(Event::class)->findOneBy(['eventId' => $dto->eventId]);
+        if ($existing !== null) {
+            return true; // already stored, nothing to do
+        }
+
         $event = new Event(
             eventId: $dto->eventId,
             session: $session,
@@ -109,14 +123,8 @@ class SessionTracker
         );
 
         $this->em->persist($event);
+        $this->em->flush();
 
-        try {
-            $this->em->flush();
-            return false; // new event
-        } catch (UniqueConstraintViolationException) {
-            // Duplicate eventId — SDK retry or double-delivery. Safe to ignore.
-            $this->em->clear(); // reset EM state after the failed transaction
-            return true;
-        }
+        return false; // new event
     }
 }
