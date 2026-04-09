@@ -1,0 +1,25 @@
+###> symfony ###
+/.env.local
+/.env.local.php
+/.env.*.local
+/config/secrets/prod/prod.decrypt.private.php
+/public/bundles/
+/var/
+/vendor/
+###< symfony ###
+
+###> phpunit ###
+/phpunit.xml
+###< phpunit ###
+
+# SQLite data file (runtime state, not tracked)
+*.db
+*.sqlite
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
