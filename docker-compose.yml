@@ -1,0 +1,11 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      # Mount var/ so the SQLite file persists across container restarts
+      - ./var:/app/var
+    environment:
+      APP_ENV: dev
+      DATABASE_URL: "sqlite:////app/var/data.db"

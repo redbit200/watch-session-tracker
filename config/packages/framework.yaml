@@ -1,0 +1,8 @@
+framework:
+    secret: '%env(APP_SECRET)%'
+    handle_all_throwables: true
+
+    # Disable sessions — this is a stateless REST API
+    session: false
+    php_errors:
+        log: true
